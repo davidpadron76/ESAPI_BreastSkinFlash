@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Globalization;
 using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
 
@@ -15,32 +16,25 @@ using VMS.TPS.Common.Model.Types;
 [assembly: AssemblyFileVersion("1.0.0.1")]
 [assembly: AssemblyInformationalVersion("1.0")]
 
-// TODO: Uncomment the following line if the script requires write access.
+// Mandatory for scripts that modify data (BeginModifications)
 [assembly: ESAPIScript(IsWriteable = true)]
 
 namespace VMS.TPS
 {
-  public class Script
-  {
-    public Script()
+    public class Script
     {
-    }
+        public Script()
+        {
+        }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    public void Execute(ScriptContext context, System.Windows.Window window, ScriptEnvironment environment)
-    {
-            // TODO : Add here the code that is called when the script is launched from Eclipse.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public void Execute(ScriptContext context, System.Windows.Window window, ScriptEnvironment environment)
+        {
             if (context.StructureSet == null)
             {
                 MessageBox.Show("Por favor, abre un StructureSet (Copia Recomendada).");
                 return;
             }
-
-            // Validar que NO estemos editando el Body original sin querer
-            // (Una medida de seguridad extra)
-            /* Recomendación profesional: El usuario debería haber hecho "Copy Structure Set" manualmente antes.
-               Intentar duplicar todo el set por código es ineficiente y arriesgado en versiones antiguas de API.
-            */
 
             // Lanzar la Interfaz
             var mainView = new MainView(context.StructureSet, context.Patient);
@@ -52,7 +46,7 @@ namespace VMS.TPS
     }
 
     // -------------------------------------------------------------------------------
-    // LÓGICA DE INTERFAZ (WPF Code-Behind)
+    // LÃ“GICA DE INTERFAZ (WPF Code-Behind)
     // -------------------------------------------------------------------------------
     public class MainView : UserControl
     {
@@ -80,18 +74,18 @@ namespace VMS.TPS
         {
             this.Background = Brushes.WhiteSmoke;
             var mainGrid = new Grid { Margin = new Thickness(20) };
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Título
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // TÃ­tulo
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // PTV
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Lado
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Grosor
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // HU
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Botón
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // BotÃ³n
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Status
 
-            // 1. Título
+            // 1. TÃ­tulo
             var title = new TextBlock
             {
-                Text = "Configuración Skin Flash",
+                Text = "ConfiguraciÃ³n Skin Flash",
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
                 Foreground = Brushes.DarkBlue,
@@ -100,14 +94,14 @@ namespace VMS.TPS
             };
             Grid.SetRow(title, 0); mainGrid.Children.Add(title);
 
-            // 2. Selección de PTV
+            // 2. SelecciÃ³n de PTV
             var stackPtv = new StackPanel { Margin = new Thickness(0, 0, 0, 15) };
             stackPtv.Children.Add(new TextBlock { Text = "1. Selecciona el PTV de Mama:", FontWeight = FontWeights.SemiBold });
             _cbPtv = new ComboBox { Margin = new Thickness(0, 5, 0, 0), Height = 25 };
             stackPtv.Children.Add(_cbPtv);
             Grid.SetRow(stackPtv, 1); mainGrid.Children.Add(stackPtv);
 
-            // 3. Selección de Lado
+            // 3. SelecciÃ³n de Lado
             var stackSide = new StackPanel { Margin = new Thickness(0, 0, 0, 15) };
             stackSide.Children.Add(new TextBlock { Text = "2. Lateralidad:", FontWeight = FontWeights.SemiBold });
             var stackRadios = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 0) };
@@ -132,7 +126,7 @@ namespace VMS.TPS
             stackHu.Children.Add(new TextBlock { Text = "(Paper: rango ideal -500 a -700)", FontSize = 10, Foreground = Brushes.Gray });
 
             var panelHuInput = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 0) };
-            // El signo menos estático
+            // El signo menos estÃ¡tico
             panelHuInput.Children.Add(new TextBlock { Text = "-", FontSize = 16, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 5, 0) });
             // La caja de texto
             _tbHu = new TextBox { Text = "500", Width = 60, VerticalAlignment = VerticalAlignment.Center };
@@ -142,7 +136,7 @@ namespace VMS.TPS
             stackHu.Children.Add(panelHuInput);
             Grid.SetRow(stackHu, 4); mainGrid.Children.Add(stackHu);
 
-            // 6. Botón Ejecutar
+            // 6. BotÃ³n Ejecutar
             _btnRun = new Button
             {
                 Content = "GENERAR FLASH Y BODY_OPTI",
@@ -182,27 +176,28 @@ namespace VMS.TPS
                 if (_cbPtv.SelectedItem == null) throw new Exception("Selecciona un PTV.");
                 if (_rbLeft.IsChecked == false && _rbRight.IsChecked == false) throw new Exception("Selecciona la lateralidad (Izq/Der).");
 
-                if (!double.TryParse(_tbThickness.Text, out double thicknessMm) || thicknessMm < 0)
-                    throw new Exception("Grosor inválido.");
+                // ESAPI Best Practice: Use InvariantCulture for parsing
+                if (!double.TryParse(_tbThickness.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out double thicknessMm) || thicknessMm < 0)
+                    throw new Exception("Grosor invÃ¡lido.");
 
-                if (!int.TryParse(_tbHu.Text, out int huValueAbs))
-                    throw new Exception("Valor HU inválido.");
+                if (!int.TryParse(_tbHu.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int huValueAbs))
+                    throw new Exception("Valor HU invÃ¡lido.");
 
                 // Aplicar signo negativo y validar rango del paper
                 int finalHu = -Math.Abs(huValueAbs);
                 if (finalHu < -1000 || finalHu > -100) // Rango de seguridad amplio, paper dice -700 a -500
                 {
-                    var result = MessageBox.Show($"El valor {finalHu} HU está fuera del rango típico (-700 a -500). ¿Deseas continuar?", "Advertencia HU", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    var result = MessageBox.Show($"El valor {finalHu} HU estÃ¡ fuera del rango tÃ­pico (-700 a -500). Â¿Deseas continuar?", "Advertencia HU", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                     if (result == MessageBoxResult.No) return;
                 }
 
                 _statusText.Text = "Procesando... Por favor espera.";
 
-                // Ejecutar Lógica
+                // Ejecutar LÃ³gica
                 RunAlgorithm(_cbPtv.SelectedItem.ToString(), _rbLeft.IsChecked == true, thicknessMm, finalHu);
 
-                _statusText.Text = "¡Proceso Completado con Éxito!";
-                MessageBox.Show("Estructuras creadas:\n\n1. FLASH_VOL (Asignado HU)\n2. BODY_Opti (Usar este en Planificación)", "Finalizado");
+                _statusText.Text = "Â¡Proceso Completado con Ã‰xito!";
+                MessageBox.Show("Estructuras creadas:\n\n1. FLASH_VOL (Asignado HU)\n2. BODY_Opti (Usar este en PlanificaciÃ³n)\n\nNOTA IMPORTANTE:\nBODY_Opti se ha creado como tipo ORGAN.\nPara usarlo como cuerpo de cÃ¡lculo, ve a la pestaÃ±a de imÃ¡genes en Eclipse, cambia el BODY original a ORGAN, y cambia BODY_Opti a EXTERNAL.", "Finalizado");
             }
             catch (Exception ex)
             {
@@ -212,7 +207,7 @@ namespace VMS.TPS
         }
 
         // -------------------------------------------------------------------------------
-        // LÓGICA DEL ALGORITMO (ESAPI)
+        // LÃ“GICA DEL ALGORITMO (ESAPI)
         // -------------------------------------------------------------------------------
         private void RunAlgorithm(string ptvId, bool isLeft, double thickMm, double huValue)
         {
@@ -225,10 +220,10 @@ namespace VMS.TPS
 
             // OARs para recortar
             Structure lungs = _ss.Structures.FirstOrDefault(s => s.Id.ToUpper().Contains("LUNGS") || s.Id.ToUpper().Contains("PULMONES"));
-            // Si no hay "Lungs" combinado, buscar Left/Right según el caso
+            // Si no hay "Lungs" combinado, buscar Left/Right segÃºn el caso
             if (lungs == null)
             {
-                // Estrategia: Si es mama Izq, me importa proteger Pulmón Izq. Si es Der, el Der.
+                // Estrategia: Si es mama Izq, me importa proteger PulmÃ³n Izq. Si es Der, el Der.
                 string lungTargetName = isLeft ? "LUNG_L" : "LUNG_R";
                 lungs = _ss.Structures.FirstOrDefault(s => s.Id.ToUpper().Contains(lungTargetName) || s.Id.ToUpper().Contains(isLeft ? "IZQ" : "DER"));
             }
@@ -236,57 +231,40 @@ namespace VMS.TPS
             Structure heart = _ss.Structures.FirstOrDefault(s => s.Id.ToUpper().Contains("HEART") || s.Id.ToUpper().Contains("CORAZON"));
 
             // 2. Crear Estructura "Bolus Virtual" (La zona de aire alrededor del cuerpo)
-            // Lógica: Expandir Body X mm. 
-            // FLASH_VOL será la intersección de (PTV expandido) con este (Aire).
-
             string flashRoiName = "FLASH_VOL";
             Structure flashStruct = _ss.Structures.FirstOrDefault(s => s.Id == flashRoiName);
             if (flashStruct == null) flashStruct = _ss.AddStructure("PTV", flashRoiName); // Tipo PTV o Control para que deje asignar HU
 
-            // A. Expandir PTV isotrópicamente para buscar la piel y el aire
-            // Necesitamos que el flash cubra el movimiento respiratorio, ej. 1.5 o 2 cm más allá del PTV original.
-            // El usuario define el grosor del flash (hacia afuera), pero el PTV debe crecer para alcanzarlo.
-            // Usaremos un margen generoso para capturar la zona de flash.
+            // A. Expandir PTV isotrÃ¡picamente para buscar la piel y el aire
             double ptvSearchMargin = thickMm + 5.0;
 
             // B. Zona de "Aire" cercana al cuerpo (Rim)
-            // Body + thickMm (hacia afuera)
-            // Truco: (Body + thick) - Body = Anillo de aire pegado a la piel
             SegmentVolume bodyExpanded = body.SegmentVolume.Margin(thickMm);
             SegmentVolume airRim = bodyExpanded.Sub(body.SegmentVolume);
 
-            // C. Intersección con la proyección del PTV
-            // Flash = (Anillo de Aire) AND (PTV expandido)
+            // C. IntersecciÃ³n con la proyecciÃ³n del PTV
             SegmentVolume ptvExpandedVol = ptv.SegmentVolume.Margin(ptvSearchMargin);
             SegmentVolume rawFlash = airRim.And(ptvExpandedVol);
 
-            // D. Limpieza (Cropping) de OARs y Lados opuestos
-            // Es vital recortar Pulmón y Corazón si la expansión del PTV se metió ahí (aunque el flash es aire, mejor asegurar)
-            // Pero más importante: Recortar lo que NO sea Anterior/Lateral.
-
-            // Si es mama Izquierda, no queremos flash a la derecha del esternón.
-            // Podemos usar el "bounding box" del PTV original para limitar geométricamente si es necesario.
-            // Por ahora, recortaremos OARs profundos.
-
+            // D. Limpieza (Cropping) de OARs
             if (lungs != null) rawFlash = rawFlash.Sub(lungs.SegmentVolume.Margin(3.0)); // Margen de seguridad
             if (heart != null) rawFlash = rawFlash.Sub(heart.SegmentVolume.Margin(3.0));
 
-            // Asignar geometría final al Flash
+            // Asignar geometrÃ­a final al Flash
             flashStruct.SegmentVolume = rawFlash;
 
             // 3. Asignar HU (Punto clave del paper)
             flashStruct.SetAssignedHU(huValue);
 
-            // 4. Crear BODY_Opti (Unión de Body Original + Flash)
+            // 4. Crear BODY_Opti (UniÃ³n de Body Original + Flash)
             string bodyOptiName = "BODY_Opti";
             Structure bodyOpti = _ss.Structures.FirstOrDefault(s => s.Id == bodyOptiName);
-            if (bodyOpti == null) bodyOpti = _ss.AddStructure("EXTERNAL", bodyOptiName); // Tipo EXTERNAL para que el TPS lo reconozca como cuerpo
+            
+            // ESAPI Best Practice: Cannot have two EXTERNAL structures. Create as ORGAN, warn user to swap types in UI.
+            if (bodyOpti == null) bodyOpti = _ss.AddStructure("ORGAN", bodyOptiName); 
 
             // BodyOpti = Body OR Flash
             bodyOpti.SegmentVolume = body.SegmentVolume.Or(flashStruct.SegmentVolume);
-
-            // NOTA FINAL: El Body Original (EXTERNAL) queda intacto.
-            // El usuario debe seleccionar BODY_Opti en el plan.
         }
     }
 }
