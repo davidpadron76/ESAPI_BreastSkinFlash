@@ -41,7 +41,7 @@ namespace VMS.TPS
             window.Content = mainView;
             window.Title = "Generador Pseudo Skin Flash - Mama VMAT";
             window.Width = 450;
-            window.Height = 550;
+            window.Height = 640;
         }
     }
 
@@ -59,6 +59,8 @@ namespace VMS.TPS
         private RadioButton _rbRight;
         private TextBox _tbThickness;
         private TextBox _tbHu;
+        private CheckBox _cbEnableZptv;
+        private TextBox _tbZptvMargin;
         private Button _btnRun;
         private TextBlock _statusText;
 
@@ -79,6 +81,7 @@ namespace VMS.TPS
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Lado
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Grosor
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // HU
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // zPTV_Expand
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Botón
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Status
 
@@ -136,7 +139,23 @@ namespace VMS.TPS
             stackHu.Children.Add(panelHuInput);
             Grid.SetRow(stackHu, 4); mainGrid.Children.Add(stackHu);
 
-            // 6. Botón Ejecutar
+            // 6. zPTV_Expand (opcional)
+            var stackZptv = new StackPanel { Margin = new Thickness(0, 0, 0, 20) };
+            _cbEnableZptv = new CheckBox { Content = "5. Generar zPTV_Expand (opcional)", FontWeight = FontWeights.SemiBold };
+            _cbEnableZptv.Checked += (s, e) => { _tbZptvMargin.IsEnabled = true; };
+            _cbEnableZptv.Unchecked += (s, e) => { _tbZptvMargin.IsEnabled = false; };
+            stackZptv.Children.Add(_cbEnableZptv);
+            stackZptv.Children.Add(new TextBlock { Text = "(PTV expandido dentro de la zona de Flash, recortado con el PTV original)", FontSize = 10, Foreground = Brushes.Gray, TextWrapping = TextWrapping.Wrap });
+
+            var panelZptvInput = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 0) };
+            panelZptvInput.Children.Add(new TextBlock { Text = "Borde del zPTV: ", VerticalAlignment = VerticalAlignment.Center });
+            _tbZptvMargin = new TextBox { Text = "10", Width = 60, IsEnabled = false, VerticalAlignment = VerticalAlignment.Center };
+            panelZptvInput.Children.Add(_tbZptvMargin);
+            panelZptvInput.Children.Add(new TextBlock { Text = " mm", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) });
+            stackZptv.Children.Add(panelZptvInput);
+            Grid.SetRow(stackZptv, 5); mainGrid.Children.Add(stackZptv);
+
+            // 7. Botón Ejecutar
             _btnRun = new Button
             {
                 Content = "GENERAR FLASH Y BODY_OPTI",
@@ -146,11 +165,11 @@ namespace VMS.TPS
                 Foreground = Brushes.White
             };
             _btnRun.Click += BtnRun_Click;
-            Grid.SetRow(_btnRun, 5); mainGrid.Children.Add(_btnRun);
+            Grid.SetRow(_btnRun, 6); mainGrid.Children.Add(_btnRun);
 
-            // 7. Status
+            // 8. Status
             _statusText = new TextBlock { Text = "Listo.", Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray };
-            Grid.SetRow(_statusText, 6); mainGrid.Children.Add(_statusText);
+            Grid.SetRow(_statusText, 7); mainGrid.Children.Add(_statusText);
 
             this.Content = mainGrid;
         }
@@ -191,13 +210,46 @@ namespace VMS.TPS
                     if (result == MessageBoxResult.No) return;
                 }
 
+                bool enableZptv = _cbEnableZptv.IsChecked == true;
+                double zptvMargin = 0;
+                if (enableZptv)
+                {
+                    if (!double.TryParse(_tbZptvMargin.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out zptvMargin) || zptvMargin < 0)
+                        throw new Exception("Borde de zPTV_Expand inválido.");
+                }
+
+                // Confirmación: el Structure Set activo se va a modificar. ESAPI no permite duplicar
+                // un Structure Set completo desde el script; si se quiere conservar el original intacto,
+                // hay que duplicarlo ANTES desde Eclipse (clic derecho sobre el Structure Set > Copiar),
+                // que sí clona todas las estructuras de una sola vez, y correr el script sobre la copia.
+                var confirmSet = MessageBox.Show(
+                    $"Se van a crear/modificar estructuras en el Structure Set actualmente abierto: '{_ss.Id}'.\n\n" +
+                    "Si quieres conservar el original sin cambios: cancela, duplica el Structure Set completo en Eclipse (clic derecho sobre el Structure Set > Copiar) y vuelve a abrir el script sobre esa copia.\n\n" +
+                    "¿Continuar modificando el Structure Set actual?",
+                    "Confirmar Structure Set", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (confirmSet == MessageBoxResult.No)
+                {
+                    _statusText.Text = "Cancelado por el usuario.";
+                    return;
+                }
+
                 _statusText.Text = "Procesando... Por favor espera.";
 
                 // Ejecutar Lógica
-                RunAlgorithm(_cbPtv.SelectedItem.ToString(), _rbLeft.IsChecked == true, thicknessMm, finalHu);
+                RunAlgorithm(_cbPtv.SelectedItem.ToString(), _rbLeft.IsChecked == true, thicknessMm, finalHu, enableZptv, zptvMargin);
 
                 _statusText.Text = "¡Proceso Completado con Éxito!";
-                MessageBox.Show("Estructuras creadas:\n\n1. FLASH_VOL (Asignado HU)\n2. BODY_Opti (Usar este en Planificación)\n\nNOTA IMPORTANTE:\nBODY_Opti se ha creado como tipo ORGAN.\nPara usarlo como cuerpo de cálculo, ve a la pestaña de imágenes en Eclipse, cambia el BODY original a ORGAN, y cambia BODY_Opti a EXTERNAL.", "Finalizado");
+                var summary = new StringBuilder();
+                summary.AppendLine("Estructuras creadas:");
+                summary.AppendLine();
+                summary.AppendLine("1. FLASH_VOL (Asignado HU)");
+                summary.AppendLine("2. BODY_Opti (Usar este en Planificación)");
+                if (enableZptv) summary.AppendLine("3. zPTV_Expand (PTV extendido a la zona de Flash, recortado con el PTV original)");
+                summary.AppendLine();
+                summary.AppendLine("NOTA IMPORTANTE:");
+                summary.AppendLine("BODY_Opti se ha creado como tipo ORGAN.");
+                summary.Append("Para usarlo como cuerpo de cálculo, ve a la pestaña de imágenes en Eclipse, cambia el BODY original a ORGAN, y cambia BODY_Opti a EXTERNAL.");
+                MessageBox.Show(summary.ToString(), "Finalizado");
             }
             catch (Exception ex)
             {
@@ -209,7 +261,7 @@ namespace VMS.TPS
         // -------------------------------------------------------------------------------
         // LÓGICA DEL ALGORITMO (ESAPI)
         // -------------------------------------------------------------------------------
-        private void RunAlgorithm(string ptvId, bool isLeft, double thickMm, double huValue)
+        private void RunAlgorithm(string ptvId, bool isLeft, double thickMm, double huValue, bool enableZptv, double zptvMarginMm)
         {
             _patient.BeginModifications();
 
@@ -217,6 +269,10 @@ namespace VMS.TPS
             Structure ptv = _ss.Structures.FirstOrDefault(s => s.Id == ptvId);
             Structure body = _ss.Structures.FirstOrDefault(s => s.DicomType == "EXTERNAL");
             if (body == null) body = _ss.Structures.FirstOrDefault(s => s.Id.ToUpper() == "BODY");
+
+            if (ptv == null) throw new Exception($"No se encontró el PTV '{ptvId}' en el Structure Set.");
+            if (ptv.IsEmpty) throw new Exception($"El PTV '{ptvId}' no tiene contorno (está vacío).");
+            if (body == null) throw new Exception("No se encontró estructura BODY/EXTERNAL en el Structure Set.");
 
             // OARs para recortar
             Structure lungs = _ss.Structures.FirstOrDefault(s => s.Id.ToUpper().Contains("LUNGS") || s.Id.ToUpper().Contains("PULMONES"));
@@ -256,7 +312,23 @@ namespace VMS.TPS
             // 3. Asignar HU (Punto clave del paper)
             flashStruct.SetAssignedHU(huValue);
 
-            // 4. Crear BODY_Opti (Unión de Body Original + Flash)
+            // 4. (Opcional) Crear zPTV_Expand: el PTV expandido "borde" mm, limitado a la zona
+            // del BODY expandido (la misma zona de Flash), y recortado con el PTV original para
+            // que quede como una estructura separada (el anillo nuevo, sin solaparse con el PTV).
+            if (enableZptv)
+            {
+                string zPtvName = "zPTV_Expand";
+                Structure zPtvStruct = _ss.Structures.FirstOrDefault(s => s.Id == zPtvName);
+                if (zPtvStruct == null) zPtvStruct = _ss.AddStructure("CONTROL", zPtvName);
+
+                SegmentVolume ptvExpandedForZ = ptv.SegmentVolume.Margin(zptvMarginMm);
+                SegmentVolume zPtvRaw = ptvExpandedForZ.And(bodyExpanded);
+                zPtvRaw = zPtvRaw.Sub(ptv.SegmentVolume); // Crop con el PTV original
+
+                zPtvStruct.SegmentVolume = zPtvRaw;
+            }
+
+            // 5. Crear BODY_Opti (Unión de Body Original + Flash)
             string bodyOptiName = "BODY_Opti";
             Structure bodyOpti = _ss.Structures.FirstOrDefault(s => s.Id == bodyOptiName);
             
