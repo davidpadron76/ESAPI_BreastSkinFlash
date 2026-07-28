@@ -7,8 +7,8 @@ In breast radiotherapy planning (such as 3DCRT or Field-in-Field / hybrid IMRT),
 
 ## ✨ Key Features
 * **Automated Flash Generation:** Instantly creates `FLASH_VOL` (a virtual bolus/density-override volume around the skin, with an assigned HU) and `BODY_Opti` (the union of the original BODY with the flash, ready to be used as the calculation body) to force the optimizer or dose calculation engine to extend fluence outside the skin.
-* **Optional zPTV_Expand:** On request, generates a `zPTV_Expand` control structure — the PTV expanded by a user-defined border, limited to the expanded-BODY (flash) zone and cropped with the original PTV, so it exists as its own non-overlapping ring for optimization purposes.
-* **Customizable Margins:** Allows the user to quickly define the flash thickness, the assigned HU, and (if enabled) the zPTV_Expand border, all in millimeters/HU based on clinical protocols.
+* **Optional anterior zPTV_Expand:** On request, generates a `zPTV_Expand` control structure — the PTV expanded **in the anterior direction only** (never posteriorly toward the lung, nor laterally), limited to the expanded-BODY (flash) zone and cropped with the original PTV, so it exists as its own non-overlapping anterior layer for optimization purposes. The anterior direction is auto-detected per case from the PTV/BODY geometry, so it holds for both supine and prone setups.
+* **Customizable Margins:** Allows the user to quickly define the flash thickness, the assigned HU, and (if enabled) the anterior zPTV_Expand border (0–50 mm), based on clinical protocols.
 * **Anatomy-Independent Logic:** Operates purely on Boolean geometry (Margin/And/Sub/Or on `SegmentVolume`), ensuring it works consistently regardless of patient anatomy or breast size.
 * **Structure Set Safety Check:** Before writing any structure, the script confirms which Structure Set is about to be modified and reminds the user to duplicate it first (via Eclipse's native right-click **Copy** on the Structure Set) if the original must stay untouched — ESAPI has no scripting call to clone an entire Structure Set in one step, so this native Eclipse action is the recommended workflow.
 * **Workflow Efficiency:** Eliminates tedious manual contouring and structure manipulation, saving significant time during the breast planning process.
@@ -32,7 +32,7 @@ To ensure proper functionality within the Eclipse environment, this project must
    * If you need to keep the original Structure Set untouched, duplicate it first in Eclipse (right-click the Structure Set > **Copy**) and open the script on the copy — the script itself cannot clone a full Structure Set.
 2. Run the compiled Breast Skin Flash `.dll`.
 3. Select the breast PTV, the laterality, the flash thickness (mm) and the assigned HU.
-4. (Optional) Check **Generate zPTV_Expand** and set its border (mm) if you also want the cropped PTV-extension structure for optimization.
+4. (Optional) Check **Generate anterior zPTV_Expand** and set its anterior border (0–50 mm) if you also want the cropped PTV-extension structure for optimization. The expansion is applied strictly in the anterior direction — laterality (left/right breast) does not change it, since no lateral margin is applied at all.
 5. Click **GENERAR FLASH Y BODY_OPTI**, confirm the Structure Set to modify in the safety prompt, and review the newly created structures (`FLASH_VOL`, `BODY_Opti`, and `zPTV_Expand` if enabled) in the TPS.
 6. `BODY_Opti` is created as an `ORGAN` structure. To use it as the calculation body, go to the image/structure properties in Eclipse, change the original `BODY` to `ORGAN`, and change `BODY_Opti` to `EXTERNAL`.
 

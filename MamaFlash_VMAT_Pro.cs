@@ -141,14 +141,14 @@ namespace VMS.TPS
 
             // 6. zPTV_Expand (opcional)
             var stackZptv = new StackPanel { Margin = new Thickness(0, 0, 0, 20) };
-            _cbEnableZptv = new CheckBox { Content = "5. Generar zPTV_Expand (opcional)", FontWeight = FontWeights.SemiBold };
+            _cbEnableZptv = new CheckBox { Content = "5. Generar zPTV_Expand anterior (opcional)", FontWeight = FontWeights.SemiBold };
             _cbEnableZptv.Checked += (s, e) => { _tbZptvMargin.IsEnabled = true; };
             _cbEnableZptv.Unchecked += (s, e) => { _tbZptvMargin.IsEnabled = false; };
             stackZptv.Children.Add(_cbEnableZptv);
-            stackZptv.Children.Add(new TextBlock { Text = "(PTV expandido dentro de la zona de Flash, recortado con el PTV original)", FontSize = 10, Foreground = Brushes.Gray, TextWrapping = TextWrapping.Wrap });
+            stackZptv.Children.Add(new TextBlock { Text = "(PTV expandido SOLO hacia anterior, dentro de la zona de Flash y recortado con el PTV original. No crece hacia posterior/pulmón ni a los lados.)", FontSize = 10, Foreground = Brushes.Gray, TextWrapping = TextWrapping.Wrap });
 
             var panelZptvInput = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 0) };
-            panelZptvInput.Children.Add(new TextBlock { Text = "Borde del zPTV: ", VerticalAlignment = VerticalAlignment.Center });
+            panelZptvInput.Children.Add(new TextBlock { Text = "Borde anterior: ", VerticalAlignment = VerticalAlignment.Center });
             _tbZptvMargin = new TextBox { Text = "10", Width = 60, IsEnabled = false, VerticalAlignment = VerticalAlignment.Center };
             panelZptvInput.Children.Add(_tbZptvMargin);
             panelZptvInput.Children.Add(new TextBlock { Text = " mm", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) });
@@ -214,8 +214,10 @@ namespace VMS.TPS
                 double zptvMargin = 0;
                 if (enableZptv)
                 {
-                    if (!double.TryParse(_tbZptvMargin.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out zptvMargin) || zptvMargin < 0)
-                        throw new Exception("Borde de zPTV_Expand inválido.");
+                    // AxisAlignedMargins sólo acepta valores en [0, 50] mm; con 0 el zPTV quedaría
+                    // vacío tras el crop con el PTV original.
+                    if (!double.TryParse(_tbZptvMargin.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out zptvMargin) || zptvMargin <= 0 || zptvMargin > 50)
+                        throw new Exception("Borde de zPTV_Expand inválido: debe ser mayor que 0 y como máximo 50 mm.");
                 }
 
                 // Confirmación: el Structure Set activo se va a modificar. ESAPI no permite duplicar
@@ -244,7 +246,7 @@ namespace VMS.TPS
                 summary.AppendLine();
                 summary.AppendLine("1. FLASH_VOL (Asignado HU)");
                 summary.AppendLine("2. BODY_Opti (Usar este en Planificación)");
-                if (enableZptv) summary.AppendLine("3. zPTV_Expand (PTV extendido a la zona de Flash, recortado con el PTV original)");
+                if (enableZptv) summary.AppendLine("3. zPTV_Expand (PTV extendido solo hacia anterior, dentro de la zona de Flash y recortado con el PTV original)");
                 summary.AppendLine();
                 summary.AppendLine("NOTA IMPORTANTE:");
                 summary.AppendLine("BODY_Opti se ha creado como tipo ORGAN.");
@@ -312,18 +314,33 @@ namespace VMS.TPS
             // 3. Asignar HU (Punto clave del paper)
             flashStruct.SetAssignedHU(huValue);
 
-            // 4. (Opcional) Crear zPTV_Expand: el PTV expandido "borde" mm, limitado a la zona
-            // del BODY expandido (la misma zona de Flash), y recortado con el PTV original para
-            // que quede como una estructura separada (el anillo nuevo, sin solaparse con el PTV).
+            // 4. (Opcional) Crear zPTV_Expand: el PTV expandido "borde" mm SOLO hacia anterior
+            // (nunca hacia posterior/pulmón ni a los lados), limitado a la zona del BODY expandido
+            // (la misma zona de Flash), y recortado con el PTV original para que quede como una
+            // estructura separada (la capa anterior nueva, sin solaparse con el PTV).
             if (enableZptv)
             {
                 string zPtvName = "zPTV_Expand";
                 Structure zPtvStruct = _ss.Structures.FirstOrDefault(s => s.Id == zPtvName);
                 if (zPtvStruct == null) zPtvStruct = _ss.AddStructure("CONTROL", zPtvName);
 
-                SegmentVolume ptvExpandedForZ = ptv.SegmentVolume.Margin(zptvMarginMm);
-                SegmentVolume zPtvRaw = ptvExpandedForZ.And(bodyExpanded);
-                zPtvRaw = zPtvRaw.Sub(ptv.SegmentVolume); // Crop con el PTV original
+                // La mama siempre queda anterior al centro del cuerpo: el signo de esa diferencia
+                // en Y identifica el sentido anterior sin depender del posicionamiento (supino/prono).
+                bool anteriorIsNegativeY = ptv.CenterPoint.y < body.CenterPoint.y;
+
+                var zMargins = new AxisAlignedMargins(
+                    StructureMarginGeometry.Outer,
+                    0.0,                                       // x1 (lateral)
+                    anteriorIsNegativeY ? zptvMarginMm : 0.0,  // y1
+                    0.0,                                       // z1 (inferior)
+                    0.0,                                       // x2 (lateral)
+                    anteriorIsNegativeY ? 0.0 : zptvMarginMm,  // y2
+                    0.0);                                      // z2 (superior)
+
+                SegmentVolume zPtvRaw = ptv.SegmentVolume
+                    .AsymmetricMargin(zMargins)
+                    .And(bodyExpanded)        // Limita el zPTV a la zona de flash
+                    .Sub(ptv.SegmentVolume);  // Crop con el PTV original
 
                 zPtvStruct.SegmentVolume = zPtvRaw;
             }
