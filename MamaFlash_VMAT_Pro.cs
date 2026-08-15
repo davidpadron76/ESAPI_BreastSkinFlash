@@ -314,10 +314,24 @@ namespace VMS.TPS
             // 3. Asignar HU (Punto clave del paper)
             flashStruct.SetAssignedHU(huValue);
 
-            // 4. (Opcional) Crear zPTV_Expand: el PTV expandido "borde" mm SOLO hacia anterior
-            // (nunca hacia posterior/pulmón ni a los lados), limitado a la zona del BODY expandido
-            // (la misma zona de Flash), y recortado con el PTV original para que quede como una
-            // estructura separada (la capa anterior nueva, sin solaparse con el PTV).
+            // 4. Crear BODY_Opti (Unión de Body Original + Flash)
+            string bodyOptiName = "BODY_Opti";
+            Structure bodyOpti = _ss.Structures.FirstOrDefault(s => s.Id == bodyOptiName);
+
+            // ESAPI Best Practice: Cannot have two EXTERNAL structures. Create as ORGAN, warn user to swap types in UI.
+            if (bodyOpti == null) bodyOpti = _ss.AddStructure("ORGAN", bodyOptiName);
+
+            // BodyOpti = Body OR Flash
+            bodyOpti.SegmentVolume = body.SegmentVolume.Or(flashStruct.SegmentVolume);
+
+            // 5. (Opcional) Crear zPTV_Expand: el PTV expandido "borde" mm SOLO hacia anterior
+            // (nunca hacia posterior/pulmón ni a los lados), limitado a BODY_Opti y recortado con el
+            // PTV original para que quede como una estructura separada (la capa anterior nueva,
+            // sin solaparse con el PTV).
+            //
+            // Se recorta contra BODY_Opti (tejido + flash real) y no contra el BODY expandido: ese
+            // último crece en todas las direcciones, incluso hacia posterior y lateral donde no hay
+            // flash, así que dejaría volumen del zPTV en aire sin densidad asignada.
             if (enableZptv)
             {
                 string zPtvName = "zPTV_Expand";
@@ -339,21 +353,11 @@ namespace VMS.TPS
 
                 SegmentVolume zPtvRaw = ptv.SegmentVolume
                     .AsymmetricMargin(zMargins)
-                    .And(bodyExpanded)        // Limita el zPTV a la zona de flash
-                    .Sub(ptv.SegmentVolume);  // Crop con el PTV original
+                    .And(bodyOpti.SegmentVolume)  // Limita el zPTV al cuerpo de cálculo (body + flash)
+                    .Sub(ptv.SegmentVolume);      // Crop con el PTV original
 
                 zPtvStruct.SegmentVolume = zPtvRaw;
             }
-
-            // 5. Crear BODY_Opti (Unión de Body Original + Flash)
-            string bodyOptiName = "BODY_Opti";
-            Structure bodyOpti = _ss.Structures.FirstOrDefault(s => s.Id == bodyOptiName);
-            
-            // ESAPI Best Practice: Cannot have two EXTERNAL structures. Create as ORGAN, warn user to swap types in UI.
-            if (bodyOpti == null) bodyOpti = _ss.AddStructure("ORGAN", bodyOptiName); 
-
-            // BodyOpti = Body OR Flash
-            bodyOpti.SegmentVolume = body.SegmentVolume.Or(flashStruct.SegmentVolume);
         }
     }
 }
